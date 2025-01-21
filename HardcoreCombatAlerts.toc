@@ -1,0 +1,7 @@
+## Interface: 11505
+## Title: Hardcore Combat Alerts
+## Notes: A simple addon to show custom messages in real time based on combat log events.
+## Author: YourName
+## Version: 1.0
+
+HardcoreCombatAlerts.lua
