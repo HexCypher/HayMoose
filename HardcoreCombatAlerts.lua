@@ -140,30 +140,30 @@ CombatAlertsFrame:SetScript("OnEvent", function(self, event, ...)
         isOffHand       = noNil(isOffHand, false)
 
         -- Print detailed combat log information for debugging
-		print("Time-"         .. safeToString(timestamp) ..
-			  " Event-"       .. safeToString(subEvent) ..
-			  " Hide-"        .. safeToString(hideCaster) ..
-			  " sGUID-"       .. safeToString(sourceGUID) ..
-			  " sName-"       .. safeToString(sourceName) ..
-			  " sFlags-"      .. safeToString(sourceFlags) ..
-			  " sRaidFlags-"  .. safeToString(sourceRaidFlags) ..
-			  " dGUID-"       .. safeToString(destGUID) ..
-			  " dName-"       .. safeToString(destName) ..
-			  " dFlags-"      .. safeToString(destFlags) ..
-			  " dRaidFlags-"  .. safeToString(destRaidFlags) ..
-			  " spellID-"     .. safeToString(spellID) ..
-			  " spellName-"   .. safeToString(spellName) ..
-			  " spellSchool-" .. safeToString(spellSchool) ..
-			  " amount-"      .. safeToString(amount) ..
-			  " overkill-"    .. safeToString(overkill) ..
-			  " school-"      .. safeToString(school) ..
-			  " resisted-"    .. safeToString(resisted) ..
-			  " blocked-"     .. safeToString(blocked) ..
-			  " absorbed-"    .. safeToString(absorbed) ..
-			  " critical-"    .. safeToString(critical) ..
-			  " glancing-"    .. safeToString(glancing) ..
-			  " crushing-"    .. safeToString(crushing) ..
-			  " offhand-"     .. safeToString(isOffHand))
+	print("Time-"         .. safeToString(timestamp) ..
+		" Event-"       .. safeToString(subEvent) ..
+		" Hide-"        .. safeToString(hideCaster) ..
+		" sGUID-"       .. safeToString(sourceGUID) ..
+		" sName-"       .. safeToString(sourceName) ..
+		" sFlags-"      .. safeToString(sourceFlags) ..
+		" sRaidFlags-"  .. safeToString(sourceRaidFlags) ..
+		" dGUID-"       .. safeToString(destGUID) ..
+		" dName-"       .. safeToString(destName) ..
+		" dFlags-"      .. safeToString(destFlags) ..
+		" dRaidFlags-"  .. safeToString(destRaidFlags) ..
+		" spellID-"     .. safeToString(spellID) ..
+		" spellName-"   .. safeToString(spellName) ..
+		" spellSchool-" .. safeToString(spellSchool) ..
+		" amount-"      .. safeToString(amount) ..
+		" overkill-"    .. safeToString(overkill) ..
+		" school-"      .. safeToString(school) ..
+		" resisted-"    .. safeToString(resisted) ..
+		" blocked-"     .. safeToString(blocked) ..
+		" absorbed-"    .. safeToString(absorbed) ..
+		" critical-"    .. safeToString(critical) ..
+		" glancing-"    .. safeToString(glancing) ..
+		" crushing-"    .. safeToString(crushing) ..
+		" offhand-"     .. safeToString(isOffHand))
 
         -- Variable to monitor specific targets (e.g., "ALL" for global monitoring)
         local watchName = "ALL"
