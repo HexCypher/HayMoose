@@ -1,93 +1,104 @@
--- Create a frame to capture events
+--------------------------------------------------------------------------------
+--#1 DECLARATIONS
+--------------------------------------------------------------------------------
+
 local CombatAlertsFrame = CreateFrame("Frame", "CombatAlertsFrame", UIParent)
 
-------------------------------------
---  Track Health %
-------------------------------------
--- Create a table to track who we've already alerted for each threshold,
--- so we only alert once until the HP rises above that threshold again.
-local healthAlertState = {
-    player = { below50 = false, below25 = false },
-    Haymus = { below50 = false, below25 = false },
+-- Table of monitored names so we can watch multiple party members
+local monitoredNames = {
+    ["Haymus"]    = true,
+    ["HexCypher"] = true,
 }
 
-------------------------------------
---  Alert Timers
-------------------------------------
--- Track the last alert time to prevent spamming alerts
-local lastAlertTime = 0
--- Minimum time (in seconds) between alerts
-local ALERT_COOLDOWN = 5
+-- Health thresholds so we alert only once until HP rises above the threshold
+local healthAlertState = {
+    Haymus = {
+        below75 = false,
+        below50 = false,
+        below25 = false,
+    },
+    HexCypher = {
+        below75 = false,
+        below50 = false,
+        below25 = false,
+    },
+}
 
-------------------------------------
---  Store IDs
-------------------------------------
--- Get the player's name and GUID for comparison purposes
-local myName = UnitName("player")           
-local myGUID = UnitGUID("player") 
+-- Track whether each monitored member is in combat
+local lastInCombatState = {}
 
-------------------------------------
--- Helper functions 
-------------------------------------
--- Send a message in the /say channel
-local function say(msg)
-    SendChatMessage(msg, "SAY")
-end
+-- Shock spells to detect for cooldown or resist notifications
+local SHOCK_SPELLS = {
+    -- Earth Shock
+    [8042]  = "Earth Shock (Rank 1)",
+    [8044]  = "Earth Shock (Rank 2)",
+    [8045]  = "Earth Shock (Rank 3)",
+    [8046]  = "Earth Shock (Rank 4)",
+    [10412] = "Earth Shock (Rank 5)",
+    [10413] = "Earth Shock (Rank 6)",
+    [10414] = "Earth Shock (Rank 7)",
 
--- Send a message in the /party channel
-local function party(msg)
-    SendChatMessage(msg, "PARTY")
-end
+    -- Flame Shock
+    [8050]  = "Flame Shock (Rank 1)",
+    [8052]  = "Flame Shock (Rank 2)",
+    [8053]  = "Flame Shock (Rank 3)",
+    [10447] = "Flame Shock (Rank 4)",
+    [10448] = "Flame Shock (Rank 5)",
 
--- Safely convert a value to a string for debugging
+    -- Frost Shock
+    [8056]  = "Frost Shock (Rank 1)",
+    [8058]  = "Frost Shock (Rank 2)",
+    [10472] = "Frost Shock (Rank 3)",
+    [10473] = "Frost Shock (Rank 4)",
+}
+
+--------------------------------------------------------------------------------
+--#2 HELPER FUNCTIONS
+--------------------------------------------------------------------------------
+
+-- (Removed or commented out the party chat function)
+-- local function party(msg)
+--    SendChatMessage(msg, "PARTY")
+-- end
+
 local function safeToString(val)
     if val == nil then
         return "[nil]"
-    end
-    if val == "" then
+    elseif val == "" then
         return "[empty]"
-    end
-    if type(val) == "boolean" then
+    elseif type(val) == "boolean" then
         return val and "true" or "false"
     end
     return tostring(val)
 end
 
--- Ensure a value is not nil, returning a fallback if it is
 local function noNil(val, fallback)
     return val == nil and fallback or val
 end
 
-------------------------------------
---  Register Events
-------------------------------------
--- Register events for health checks
+--------------------------------------------------------------------------------
+--#3 REGISTER EVENTS
+--------------------------------------------------------------------------------
+
+CombatAlertsFrame:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
+
+-- Monitor party members’ health
 CombatAlertsFrame:RegisterEvent("UNIT_HEALTH")
 CombatAlertsFrame:RegisterEvent("UNIT_MAXHEALTH")
 
--- Register events for combat state and combat log
-CombatAlertsFrame:RegisterEvent("PLAYER_REGEN_DISABLED")
-CombatAlertsFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
-CombatAlertsFrame:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
+-- Track party members entering/leaving combat
+CombatAlertsFrame:RegisterUnitEvent("UNIT_FLAGS", "party1", "party2", "party3", "party4")
 
-------------------------------------
---  Main Event Handler
-------------------------------------
--- Main function to handle registered events
+--------------------------------------------------------------------------------
+--#4 MAIN EVENT HANDLER
+--------------------------------------------------------------------------------
+
 CombatAlertsFrame:SetScript("OnEvent", function(self, event, ...)
-    if event == "PLAYER_REGEN_DISABLED" then
-        -- Alert when entering combat
-        print("|cffff0000[Alert]|r You have entered combat!")
-        say("Contact!")
-    elseif event == "PLAYER_REGEN_ENABLED" then
-        -- Alert when leaving combat
-        print("|cff00ff00[Alert]|r You have left combat.")
+    if event == "COMBAT_LOG_EVENT_UNFILTERED" then
 
-    elseif event == "COMBAT_LOG_EVENT_UNFILTERED" then
-        -------------------------------------
-        -- 1) Parse Combat Log
-        -------------------------------------
-        -- Extract combat log information
+        ----------------------------------------------------------------------------
+        --#4.1 COMBAT_LOG_EVENT_UNFILTERED SUB-SECTION
+        ----------------------------------------------------------------------------
         local timestamp,
               subEvent,
               hideCaster,
@@ -113,154 +124,170 @@ CombatAlertsFrame:SetScript("OnEvent", function(self, event, ...)
               crushing,
               isOffHand = CombatLogGetCurrentEventInfo()
 
-        -- Sanitize extracted values to ensure they are not nil
-        timestamp       = noNil(timestamp, 0)
-        subEvent        = noNil(subEvent, "[event]")
-        hideCaster      = noNil(hideCaster, false)
-        sourceGUID      = noNil(sourceGUID, "[nil]")
-        sourceName      = noNil(sourceName, "[nil]")
-        sourceFlags     = noNil(sourceFlags, 0)
-        sourceRaidFlags = noNil(sourceRaidFlags, 0)
-        destGUID        = noNil(destGUID, "[nil]")
-        destName        = noNil(destName, "[nil]")
-        destFlags       = noNil(destFlags, 0)
-        destRaidFlags   = noNil(destRaidFlags, 0)
-        spellID         = noNil(spellID, 0)
-        spellName       = noNil(spellName, "[spell]")
-        spellSchool     = noNil(spellSchool, 0)
-        amount          = noNil(amount, 0)
-        overkill        = noNil(overkill, 0)
-        school          = noNil(school, 0)
-        resisted        = noNil(resisted, 0)
-        blocked         = noNil(blocked, 0)
-        absorbed        = noNil(absorbed, 0)
-        critical        = noNil(critical, false)
-        glancing        = noNil(glancing, false)
-        crushing        = noNil(crushing, false)
-        isOffHand       = noNil(isOffHand, false)
+        -- Sanitize values
+        timestamp   = noNil(timestamp, 0)
+        subEvent    = noNil(subEvent, "[event]")
+        sourceName  = noNil(sourceName, "[nil]")
+        destName    = noNil(destName, "[nil]")
+        spellID     = noNil(spellID, 0)
+        spellName   = noNil(spellName, "[spell]")
+        amount      = noNil(amount, 0)
+        critical    = noNil(critical, false)
 
-        -- Print detailed combat log information for debugging
-	print("Time-"         .. safeToString(timestamp) ..
-		" Event-"       .. safeToString(subEvent) ..
-		" Hide-"        .. safeToString(hideCaster) ..
-		" sGUID-"       .. safeToString(sourceGUID) ..
-		" sName-"       .. safeToString(sourceName) ..
-		" sFlags-"      .. safeToString(sourceFlags) ..
-		" sRaidFlags-"  .. safeToString(sourceRaidFlags) ..
-		" dGUID-"       .. safeToString(destGUID) ..
-		" dName-"       .. safeToString(destName) ..
-		" dFlags-"      .. safeToString(destFlags) ..
-		" dRaidFlags-"  .. safeToString(destRaidFlags) ..
-		" spellID-"     .. safeToString(spellID) ..
-		" spellName-"   .. safeToString(spellName) ..
-		" spellSchool-" .. safeToString(spellSchool) ..
-		" amount-"      .. safeToString(amount) ..
-		" overkill-"    .. safeToString(overkill) ..
-		" school-"      .. safeToString(school) ..
-		" resisted-"    .. safeToString(resisted) ..
-		" blocked-"     .. safeToString(blocked) ..
-		" absorbed-"    .. safeToString(absorbed) ..
-		" critical-"    .. safeToString(critical) ..
-		" glancing-"    .. safeToString(glancing) ..
-		" crushing-"    .. safeToString(crushing) ..
-		" offhand-"     .. safeToString(isOffHand))
+        -- Determine if this event is about someone we are monitoring
+        local isSourceMonitored = monitoredNames[sourceName] ~= nil
+        local isDestMonitored   = monitoredNames[destName]   ~= nil
 
-        -- Variable to monitor specific targets (e.g., "ALL" for global monitoring)
-        local watchName = "ALL"
-
-        -- Check if the event involves the monitored name
-        local isMonitoredName = (watchName == "ALL") or
-                                 (sourceName == watchName) or
-                                 (destName == watchName)
-
-        -- Determine if the player is involved in the event
-        local isPlayer = (sourceName == myName or sourceGUID == myGUID)
-
-        ------------------------------------
-        --  Death Alert
-        ------------------------------------
-        if subEvent == "UNIT_DIED" then
-            print("|cffff0000[Hardcore Alert]|r " .. (destName or "Someone") .. " just died!")
+        ----------------------------------------------------------------------------
+        -- 4.1.a: Death Alert (UNIT_DIED)
+        ----------------------------------------------------------------------------
+        if subEvent == "UNIT_DIED" and isDestMonitored then
+            print("|cffff0000[Hardcore Alert]|r " .. destName .. " just died!")
         end
 
-        ------------------------------------
-        --  Critical Damage Alert
-        ------------------------------------
-        if subEvent == "SWING_DAMAGE" or subEvent:find("_DAMAGE") then
-            if critical and isMonitoredName then
-                print("|cffff0000[Hardcore Alert]|r " ..
-                      (destName or "Someone") .. " took a CRITICAL HIT from " ..
-                      (sourceName or "Unknown") .. "!")
+        ----------------------------------------------------------------------------
+        -- 4.1.b: Critical Damage Alert (with damage amount if > 0)
+        ----------------------------------------------------------------------------
+        if (subEvent == "SWING_DAMAGE" or subEvent:find("_DAMAGE"))
+           and critical
+           and (isSourceMonitored or isDestMonitored)
+        then
+            -- If the amount is positive, include it in the message
+            local amountText = ""
+            if amount and amount > 0 then
+                amountText = " for " .. amount
+            end
+
+            print("|cffff0000[Hardcore Alert]|r "
+                .. destName
+                .. " took a CRITICAL HIT"
+                .. amountText
+                .. " from "
+                .. sourceName
+                .. "!")
+        end
+
+        ----------------------------------------------------------------------------
+        -- 4.1.c: Spell Cast Start (e.g., if monitored Shaman is casting something)
+        ----------------------------------------------------------------------------
+        if subEvent == "SPELL_CAST_START" and isSourceMonitored then
+            local casterName = sourceName
+            local targetName = (destName == "[nil]" and "No Target") or destName
+
+            if targetName == "No Target" then
+                print(string.format("|cff00ff00[Hardcore Alert]|r %s is casting %s!",
+                                    casterName, spellName))
+            else
+                print(string.format("|cff00ff00[Hardcore Alert]|r %s is casting %s on %s!",
+                                    casterName, spellName, targetName))
             end
         end
 
-        ------------------------------------
-        --  Spell Cast Alert (Non-Player)
-        ------------------------------------
-        if not isPlayer and subEvent == "SPELL_CAST_START" then
-            local casterName = sourceName or "Unknown"
-            local spell      = spellName or "Unknown Spell"
-            local targetName = destName  or "No Target"
-
-            print(string.format("|cff00ff00[Hardcore Alert]|r %s is casting %s on %s!",
-                                casterName, spell, targetName))
-        end
-
-        ------------------------------------
-        --  Combat Action Alert
-        ------------------------------------
-        local isCombatAction = subEvent:find("_DAMAGE") or
-                               subEvent:find("_MISSED") or
-                               subEvent:find("_CAST") or
-                               subEvent:find("_AURA_APPLIED")
-
-        if isCombatAction and isMonitoredName then
-            local now = GetTime()
-            if (now - lastAlertTime) > ALERT_COOLDOWN then
-                print("|cffffff00[Alert]|r " ..
-                      (sourceName or "Party member") .. " appears to have engaged in combat!")
-                lastAlertTime = now
+        ----------------------------------------------------------------------------
+        -- 4.1.d: Spell Cast Success (Shock Spell => Start 6s Cooldown)
+        ----------------------------------------------------------------------------
+        if subEvent == "SPELL_CAST_SUCCESS" and isSourceMonitored then
+            local shockName = SHOCK_SPELLS[spellID]
+            if shockName then
+                print("|cff00ff00[Hardcore Alert]|r " .. sourceName .. " used " .. shockName .. "!")
+                -- After 6 seconds, let them know it's ready again
+                C_Timer.After(6, function()
+                    print("|cff00ff00[Hardcore Alert]|r " .. sourceName .. "'s " .. shockName .. " is off cooldown!")
+                end)
             end
         end
 
+        ----------------------------------------------------------------------------
+        -- 4.1.e: Shock Resist Check (SPELL_MISSED with missType == "RESIST")
+        ----------------------------------------------------------------------------
+        if subEvent == "SPELL_MISSED" and isSourceMonitored then
+            local missType = select(15, CombatLogGetCurrentEventInfo())
+            missType = noNil(missType, "UNKNOWN")
+
+            local shockName = SHOCK_SPELLS[spellID]
+            if shockName and missType == "RESIST" then
+                print("|cffff0000[Hardcore Alert]|r " .. sourceName
+                    .. "'s " .. shockName
+                    .. " was |cffFF0000RESISTED|r by "
+                    .. destName
+                    .. "!")
+            end
+        end
+
+    ----------------------------------------------------------------------------
+    --#4.2 UNIT_HEALTH / UNIT_MAXHEALTH SUB-SECTION
+    ----------------------------------------------------------------------------
     elseif event == "UNIT_HEALTH" or event == "UNIT_MAXHEALTH" then
-        -------------------------------------
-        -- 2) Track Health Thresholds
-        -------------------------------------
         local unitID = ...
-        local name = UnitName(unitID)
-
-        -- Ensure the unit is either the player or a party member
-        if unitID == "player" or unitID:match("^party%d$") then
+        -- Only if it's a party unit
+        if unitID and unitID:match("^party%d$") then
+            local name = UnitName(unitID)
             if not name then return end
 
-            -- Initialize health tracking for new units
-            if not healthAlertState[name] then
-                healthAlertState[name] = { below50 = false, below25 = false }
+            -- If we’re only tracking certain party members, skip the rest
+            if not monitoredNames[name] then
+                return
             end
 
-            -- Calculate current health percentage
+            -- If table fields are missing for a newly discovered name, initialize them
+            if not healthAlertState[name] then
+                healthAlertState[name] = { below75 = false, below50 = false, below25 = false }
+            end
+
             local currentHP = UnitHealth(unitID)
             local maxHP     = UnitHealthMax(unitID)
             if maxHP > 0 then
                 local percent = (currentHP / maxHP) * 100
 
-                -- Alert if health drops below 25%
-                if percent <= 25 and not healthAlertState[name].below25 then
-                    print("|cffff0000[Hardcore Alert]|r " .. name .. " is below 25% health!")
-                    healthAlertState[name].below25 = true
-                elseif percent > 25 then
-                    healthAlertState[name].below25 = false
+                -- 75% threshold
+                if percent <= 75 and not healthAlertState[name].below75 then
+                    print("|cff808080[Hardcore Alert]|r " .. name .. " is at or below 75% health!")
+                    healthAlertState[name].below75 = true
+                elseif percent > 75 then
+                    healthAlertState[name].below75 = false
                 end
 
-                -- Alert if health drops below 50%
+                -- 50% threshold
                 if percent <= 50 and not healthAlertState[name].below50 then
                     print("|cffff8000[Hardcore Alert]|r " .. name .. " is at or below 50% health!")
                     healthAlertState[name].below50 = true
                 elseif percent > 50 then
                     healthAlertState[name].below50 = false
                 end
+
+                -- 25% threshold
+                if percent <= 25 and not healthAlertState[name].below25 then
+                    print("|cffff0000[Hardcore Alert]|r " .. name .. " is below 25% health!")
+                    healthAlertState[name].below25 = true
+                elseif percent > 25 then
+                    healthAlertState[name].below25 = false
+                end
             end
+        end
+
+    ----------------------------------------------------------------------------
+    --#4.3 UNIT_FLAGS SUB-SECTION (Party Member Combat State)
+    ----------------------------------------------------------------------------
+    elseif event == "UNIT_FLAGS" then
+        local unitID = ...
+        if not unitID then return end
+
+        local inCombat = UnitAffectingCombat(unitID)
+        local name     = UnitName(unitID)
+        if not name then return end
+
+        -- Only track if it's one of our monitored names
+        if not monitoredNames[name] then
+            return
+        end
+
+        if inCombat and not lastInCombatState[name] then
+            -- Entered combat
+            lastInCombatState[name] = true
+        elseif not inCombat and lastInCombatState[name] then
+            -- Left combat
+            lastInCombatState[name] = false
+            print("|cff00ff00[Alert]|r " .. name .. " left combat.")
         end
     end
 end)
